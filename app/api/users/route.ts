@@ -1,5 +1,4 @@
 import { prisma } from '@/app/lib/prisma';
-import type { Prisma } from '@prisma/client';
 
 export async function GET() {
   const users = await prisma.user.findMany({ orderBy: { id: 'asc' } });
@@ -8,7 +7,7 @@ export async function GET() {
     return Response.json(users);
   }
 
-  const created = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+  const created = await prisma.$transaction(async (tx: typeof prisma) => {
     const pair = await tx.pair.create({ data: {} });
     const userA = await tx.user.create({ data: { name: 'あなた' } });
     const userB = await tx.user.create({ data: { name: 'パートナー' } });
