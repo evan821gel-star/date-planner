@@ -1,0 +1,128 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+
+}
+
+model Place {
+  id        Int      @id @default(autoincrement())
+  name      String
+  url       String?
+  imageUrl  String?
+  memo      String?
+  prefecture String?
+  visited   Boolean  @default(false)
+  visitedAt DateTime?
+  pairId    Int?
+  createdById Int?
+  createdAt DateTime @default(now())
+  planItems PlanItem[]
+
+  pair      Pair?   @relation(fields: [pairId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation(fields: [createdById], references: [id], onDelete: Cascade)
+}
+
+model PlanDay {
+  id        Int        @id @default(autoincrement())
+  title     String
+  date      DateTime
+  pairId    Int?
+  createdById Int?
+  createdAt DateTime   @default(now())
+  items     PlanItem[]
+
+  pair      Pair? @relation(fields: [pairId], references: [id], onDelete: Cascade)
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: Cascade)
+}
+
+model PlanItem {
+  id        Int      @id @default(autoincrement())
+  planDayId Int
+  order     Int
+  startTime String?
+  endTime   String?
+  note      String?
+  title     String?
+  placeId   Int?
+  kind      PlanItemKind @default(PLACE)
+  createdById Int?
+
+  planDay PlanDay @relation(fields: [planDayId], references: [id], onDelete: Cascade)
+  place   Place?  @relation(fields: [placeId], references: [id], onDelete: SetNull)
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+enum PlanItemKind {
+  PLACE
+  CUSTOM
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+
+  places    Place[]
+  planDays  PlanDay[]
+  planItems PlanItem[]
+  posts     Post[]
+  comments  Comment[]
+  memberships PairMember[]
+}
+
+model Pair {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+
+  members   PairMember[]
+  places    Place[]
+  planDays  PlanDay[]
+  posts     Post[]
+  comments  Comment[]
+}
+
+model PairMember {
+  id        Int      @id @default(autoincrement())
+  pairId    Int
+  userId    Int
+  createdAt DateTime @default(now())
+
+  pair      Pair @relation(fields: [pairId], references: [id], onDelete: Cascade)
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([pairId, userId])
+}
+
+model Post {
+  id          Int      @id @default(autoincrement())
+  content     String
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  pairId      Int?
+  createdById Int?
+
+  pair        Pair? @relation(fields: [pairId], references: [id], onDelete: Cascade)
+  createdBy   User? @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  comments    Comment[]
+}
+
+model Comment {
+  id          Int      @id @default(autoincrement())
+  content     String
+  createdAt   DateTime @default(now())
+  postId      Int
+  pairId      Int?
+  createdById Int?
+
+  post        Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  pair        Pair? @relation(fields: [pairId], references: [id], onDelete: Cascade)
+  createdBy   User? @relation(fields: [createdById], references: [id], onDelete: Cascade)
+}
