@@ -23,6 +23,7 @@ model Place {
   visitedAt DateTime?
   pairId    Int?
   createdById Int?
+  createdByName String?
   createdAt DateTime @default(now())
   planItems PlanItem[]
 
@@ -54,6 +55,7 @@ model PlanItem {
   placeId   Int?
   kind      PlanItemKind @default(PLACE)
   createdById Int?
+  createdByName String?
 
   planDay PlanDay @relation(fields: [planDayId], references: [id], onDelete: Cascade)
   place   Place?  @relation(fields: [placeId], references: [id], onDelete: SetNull)
@@ -67,6 +69,9 @@ enum PlanItemKind {
 
 model User {
   id        Int      @id @default(autoincrement())
+  username  String?  @unique
+  passwordHash String?
+  passwordSalt String?
   name      String
   createdAt DateTime @default(now())
 
@@ -76,6 +81,7 @@ model User {
   posts     Post[]
   comments  Comment[]
   memberships PairMember[]
+  sessions  Session[]
 }
 
 model Pair {
@@ -108,6 +114,7 @@ model Post {
   createdAt   DateTime @default(now())
   pairId      Int?
   createdById Int?
+  createdByName String?
 
   pair        Pair? @relation(fields: [pairId], references: [id], onDelete: Cascade)
   createdBy   User? @relation(fields: [createdById], references: [id], onDelete: Cascade)
@@ -121,8 +128,18 @@ model Comment {
   postId      Int
   pairId      Int?
   createdById Int?
+  createdByName String?
 
   post        Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
   pair        Pair? @relation(fields: [pairId], references: [id], onDelete: Cascade)
   createdBy   User? @relation(fields: [createdById], references: [id], onDelete: Cascade)
+}
+
+model Session {
+  id        String   @id
+  userId    Int
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

@@ -1,11 +1,10 @@
 import { prisma } from '@/app/lib/prisma';
+import { requireUser } from '@/app/lib/auth';
 
 async function getContext(req: Request) {
-  const userIdHeader = req.headers.get('x-user-id');
-  const userId = userIdHeader ? Number(userIdHeader) : NaN;
-  if (!userId || Number.isNaN(userId)) {
-    return { error: new Response('user is required', { status: 401 }) };
-  }
+  const auth = await requireUser();
+  if ('error' in auth) return { error: auth.error };
+  const userId = auth.userId;
   const membership = await prisma.pairMember.findFirst({
     where: { userId },
   });
@@ -20,7 +19,7 @@ export async function POST(req: Request) {
   if ('error' in ctx) return ctx.error;
 
   const body = await req.json();
-  const { postId, content } = body;
+  const { postId, content, createdByName } = body;
 
   if (!postId || typeof postId !== 'number') {
     return new Response('postId is required', { status: 400 });
@@ -40,6 +39,7 @@ export async function POST(req: Request) {
       postId,
       pairId: ctx.pairId,
       createdById: ctx.userId,
+      createdByName: typeof createdByName === 'string' && createdByName.trim() !== '' ? createdByName.trim() : null,
     },
     include: { createdBy: true },
   });

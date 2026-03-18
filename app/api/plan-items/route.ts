@@ -1,11 +1,10 @@
 import { prisma } from '@/app/lib/prisma';
+import { requireUser } from '@/app/lib/auth';
 
 async function getContext(req: Request) {
-  const userIdHeader = req.headers.get('x-user-id');
-  const userId = userIdHeader ? Number(userIdHeader) : NaN;
-  if (!userId || Number.isNaN(userId)) {
-    return { error: new Response('user is required', { status: 401 }) };
-  }
+  const auth = await requireUser();
+  if ('error' in auth) return { error: auth.error };
+  const userId = auth.userId;
   const membership = await prisma.pairMember.findFirst({
     where: { userId },
   });
@@ -20,7 +19,7 @@ export async function POST(req: Request) {
   if ('error' in ctx) return ctx.error;
 
   const body = await req.json();
-  const { planDayId, placeId, title } = body;
+  const { planDayId, placeId, title, createdByName } = body;
 
   if (!planDayId || typeof planDayId !== 'number') {
     return new Response('planDayId is required', { status: 400 });
@@ -50,6 +49,7 @@ export async function POST(req: Request) {
     kind: 'PLACE' | 'CUSTOM';
     place?: { connect: { id: number } };
     createdBy: { connect: { id: number } };
+    createdByName?: string | null;
   } = {
     planDay: { connect: { id: planDayId } },
     order: nextOrder,
@@ -57,6 +57,9 @@ export async function POST(req: Request) {
     kind: hasPlaceId ? 'PLACE' : 'CUSTOM',
     createdBy: { connect: { id: ctx.userId } },
   };
+  if (typeof createdByName === 'string' && createdByName.trim() !== '') {
+    data.createdByName = createdByName.trim();
+  }
 
   if (hasPlaceId) {
     data.place = { connect: { id: placeId } };

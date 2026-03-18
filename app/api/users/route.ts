@@ -1,54 +1,43 @@
 import { prisma } from '@/app/lib/prisma';
+import { requireUser } from '@/app/lib/auth';
 import type { Prisma } from '@prisma/client';
 
 export async function GET() {
-  const users = await prisma.user.findMany({ orderBy: { id: 'asc' } });
+  const auth = await requireUser();
+  if ('error' in auth) return auth.error;
 
-  if (users.length > 0) {
-    return Response.json(users);
+  const membership = await prisma.pairMember.findFirst({
+    where: { userId: auth.userId },
+  });
+  if (!membership) {
+    return new Response('pair not found', { status: 404 });
   }
 
-  const created = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    const pair = await tx.pair.create({ data: {} });
-    const userA = await tx.user.create({ data: { name: 'あなた' } });
-    const userB = await tx.user.create({ data: { name: 'パートナー' } });
-    await tx.pairMember.createMany({
-      data: [
-        { pairId: pair.id, userId: userA.id },
-        { pairId: pair.id, userId: userB.id },
-      ],
-    });
-    await tx.place.updateMany({
-      where: { pairId: null },
-      data: { pairId: pair.id, createdById: userA.id },
-    });
-    await tx.planDay.updateMany({
-      where: { pairId: null },
-      data: { pairId: pair.id, createdById: userA.id },
-    });
-    await tx.planItem.updateMany({
-      where: { createdById: null },
-      data: { createdById: userA.id },
-    });
-    return [userA, userB];
+  const users = await prisma.user.findMany({
+    where: {
+      memberships: {
+        some: { pairId: membership.pairId },
+      },
+    },
+    orderBy: { id: 'asc' },
   });
 
-  return Response.json(created);
+  return Response.json(users);
 }
 
 export async function PATCH(req: Request) {
-  const body = await req.json();
-  const { id, name } = body;
+  const auth = await requireUser();
+  if ('error' in auth) return auth.error;
 
-  if (!id || typeof id !== 'number') {
-    return new Response('id is required', { status: 400 });
-  }
+  const body = await req.json();
+  const { name } = body;
+
   if (!name || typeof name !== 'string') {
     return new Response('name is required', { status: 400 });
   }
 
   const updated = await prisma.user.update({
-    where: { id },
+    where: { id: auth.userId },
     data: { name: name.trim() },
   });
 

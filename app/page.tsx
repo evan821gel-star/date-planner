@@ -1,7 +1,13 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { JapanMap } from 'japanmap';
+
+type User = {
+  id: number;
+  name: string | null;
+  username?: string | null;
+};
 
 type Place = {
   id: number;
@@ -13,21 +19,21 @@ type Place = {
   visited: boolean;
   visitedAt: string | null;
   createdAt: string;
-  createdBy?: {
-    id: number;
-    name: string;
-  };
+  createdBy?: User | null;
+  createdByName?: string | null;
 };
 
 type PlanItem = {
   id: number;
+  title: string | null;
+  kind: 'PLACE' | 'CUSTOM';
   order: number;
   startTime: string | null;
   endTime: string | null;
   note: string | null;
-  title: string | null;
-  kind: 'PLACE' | 'CUSTOM';
-  place: Place | null;
+  place?: Place | null;
+  createdBy?: User | null;
+  createdByName?: string | null;
 };
 
 type PlanDay = {
@@ -43,9 +49,12 @@ type PlanDaySummary = {
   date: string;
 };
 
-type User = {
+type Comment = {
   id: number;
-  name: string;
+  content: string;
+  createdAt: string;
+  createdBy?: User | null;
+  createdByName?: string | null;
 };
 
 type Post = {
@@ -53,37 +62,60 @@ type Post = {
   content: string;
   imageUrl: string | null;
   createdAt: string;
-  createdBy?: {
-    id: number;
-    name: string;
-  };
-  comments?: Comment[];
+  createdBy?: User | null;
+  createdByName?: string | null;
+  comments: Comment[];
 };
 
-type Comment = {
-  id: number;
-  content: string;
-  createdAt: string;
-  createdBy?: {
-    id: number;
-    name: string;
-  };
-};
-
-const createdAtFormatter = new Intl.DateTimeFormat('ja-JP', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-});
-
-const monthLabelFormatter = new Intl.DateTimeFormat('ja-JP', {
-  year: 'numeric',
-  month: 'long',
-});
-
-const shortDateFormatter = new Intl.DateTimeFormat('ja-JP', {
-  month: 'short',
-  day: 'numeric',
-});
+const prefectureOptions = [
+  '北海道',
+  '青森県',
+  '岩手県',
+  '宮城県',
+  '秋田県',
+  '山形県',
+  '福島県',
+  '茨城県',
+  '栃木県',
+  '群馬県',
+  '埼玉県',
+  '千葉県',
+  '東京都',
+  '神奈川県',
+  '新潟県',
+  '富山県',
+  '石川県',
+  '福井県',
+  '山梨県',
+  '長野県',
+  '岐阜県',
+  '静岡県',
+  '愛知県',
+  '三重県',
+  '滋賀県',
+  '京都府',
+  '大阪府',
+  '兵庫県',
+  '奈良県',
+  '和歌山県',
+  '鳥取県',
+  '島根県',
+  '岡山県',
+  '広島県',
+  '山口県',
+  '徳島県',
+  '香川県',
+  '愛媛県',
+  '高知県',
+  '福岡県',
+  '佐賀県',
+  '長崎県',
+  '熊本県',
+  '大分県',
+  '宮崎県',
+  '鹿児島県',
+  '沖縄県',
+];
 
 const prefectureCodeMap: Record<string, string> = {
   北海道: 'JP01',
@@ -135,1321 +167,1123 @@ const prefectureCodeMap: Record<string, string> = {
   沖縄県: 'JP47',
 };
 
-const prefectureList = Object.entries(prefectureCodeMap).map(([name, id]) => ({
-  name,
-  id,
-}));
-
 const regionMap: Record<string, string[]> = {
-  北海道: ['北海道'],
-  東北: ['青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県'],
+  '北海道・東北': ['北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県'],
   関東: ['茨城県', '栃木県', '群馬県', '埼玉県', '千葉県', '東京都', '神奈川県'],
-  中部: [
-    '新潟県',
-    '富山県',
-    '石川県',
-    '福井県',
-    '山梨県',
-    '長野県',
-    '岐阜県',
-    '静岡県',
-    '愛知県',
-  ],
+  中部: ['新潟県', '富山県', '石川県', '福井県', '山梨県', '長野県', '岐阜県', '静岡県', '愛知県'],
   近畿: ['三重県', '滋賀県', '京都府', '大阪府', '兵庫県', '奈良県', '和歌山県'],
   中国: ['鳥取県', '島根県', '岡山県', '広島県', '山口県'],
   四国: ['徳島県', '香川県', '愛媛県', '高知県'],
-  九州: ['福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県'],
-  沖縄: ['沖縄県'],
+  '九州・沖縄': ['福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県'],
 };
 
-const regionOptions = ['すべて', ...Object.keys(regionMap)];
-const visitedOptions = ['すべて', '行った', '未訪問'];
+const formatDate = (value: string | null | undefined) => {
+  if (!value) return '';
+  const date = new Date(value);
+  return date.toLocaleDateString('ja-JP', { year: 'numeric', month: 'short', day: 'numeric' });
+};
+
+const formatDateTime = (value: string | null | undefined) => {
+  if (!value) return '';
+  const date = new Date(value);
+  return date.toLocaleString('ja-JP', { dateStyle: 'short', timeStyle: 'short' });
+};
+
+const dateKey = (value: string | Date) => {
+  const date = typeof value === 'string' ? new Date(value) : value;
+  return date.toLocaleDateString('sv-SE');
+};
+
+const todayKey = () => new Date().toLocaleDateString('sv-SE');
 
 export default function Home() {
-  const [name, setName] = useState('');
-  const [url, setUrl] = useState('');
+  const [tab, setTab] = useState<'places' | 'timeline' | 'album'>('places');
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+
   const [places, setPlaces] = useState<Place[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [planDate, setPlanDate] = useState(() => new Date().toLocaleDateString('sv-SE'));
+  const [placeName, setPlaceName] = useState('');
+  const [placeUrl, setPlaceUrl] = useState('');
+  const [visitedFilter, setVisitedFilter] = useState<'ALL' | 'VISITED' | 'UNVISITED'>('ALL');
+  const [regionFilter, setRegionFilter] = useState<string>('ALL');
+  const [creatorFilter, setCreatorFilter] = useState<string>('ALL');
+  const [memoDrafts, setMemoDrafts] = useState<Record<number, string>>({});
+
+  const [selectedDate, setSelectedDate] = useState<string>(todayKey());
+  const [calendarMonth, setCalendarMonth] = useState<string>(todayKey().slice(0, 7));
   const [planDay, setPlanDay] = useState<PlanDay | null>(null);
-  const [planLoading, setPlanLoading] = useState(true);
-  const [customTitle, setCustomTitle] = useState('');
-  const [planTitleDraft, setPlanTitleDraft] = useState('');
-  const [calendarMonth, setCalendarMonth] = useState(() =>
-    new Date().toLocaleDateString('sv-SE').slice(0, 7),
-  );
-  const [monthlyPlans, setMonthlyPlans] = useState<PlanDaySummary[]>([]);
-  const [placeMemoDrafts, setPlaceMemoDrafts] = useState<Record<number, string>>({});
+  const [planDays, setPlanDays] = useState<PlanDaySummary[]>([]);
+  const [planTitle, setPlanTitle] = useState('');
+  const [customItemTitle, setCustomItemTitle] = useState('');
   const [planItemDrafts, setPlanItemDrafts] = useState<
-    Record<number, { startTime?: string; endTime?: string; note?: string }>
+    Record<number, { startTime: string; endTime: string; note: string }>
   >({});
-  const [users, setUsers] = useState<User[]>([]);
-  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
-  const [userNameDraft, setUserNameDraft] = useState('');
-  const [isMapOpen, setIsMapOpen] = useState(false);
-  const [visitedFilter, setVisitedFilter] = useState('すべて');
-  const [regionFilter, setRegionFilter] = useState('すべて');
-  const [creatorFilter, setCreatorFilter] = useState<'all' | 'me' | 'partner'>('all');
-  const [activeTab, setActiveTab] = useState<'places' | 'timeline' | 'album'>('places');
-  const [posts, setPosts] = useState<Post[]>([]);
+
   const [postContent, setPostContent] = useState('');
   const [postImageUrl, setPostImageUrl] = useState('');
-  const [postFilter, setPostFilter] = useState<'all' | 'me' | 'partner'>('all');
+  const [posts, setPosts] = useState<Post[]>([]);
   const [commentDrafts, setCommentDrafts] = useState<Record<number, string>>({});
-  const [gachaResult, setGachaResult] = useState<Place | null>(null);
-  const [nextPlanText, setNextPlanText] = useState<string>('未設定');
 
-  async function loadUsers() {
-    const res = await fetch('/api/users');
-    const data = await res.json();
-    setUsers(data);
-    if (data.length > 0 && currentUserId === null) {
-      setCurrentUserId(data[0].id);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [gachaOpen, setGachaOpen] = useState(false);
+  const [gachaResult, setGachaResult] = useState<Place | null>(null);
+
+  const [displayName, setDisplayName] = useState('');
+  const [nextPlanText, setNextPlanText] = useState('');
+
+  const resolveCreatorName = (name?: string | null, user?: User | null) =>
+    name ?? user?.name ?? '不明';
+
+  useEffect(() => {
+    const stored = localStorage.getItem('next-plan-text');
+    if (stored) setNextPlanText(stored);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('next-plan-text', nextPlanText);
+  }, [nextPlanText]);
+
+  useEffect(() => {
+    void loadMe();
+    void loadPlaces();
+    void loadPosts();
+  }, []);
+
+  useEffect(() => {
+    void loadPlanDay(selectedDate);
+  }, [selectedDate]);
+
+  useEffect(() => {
+    void loadPlanDays(calendarMonth);
+  }, [calendarMonth]);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('dp-display-name');
+    if (stored) setDisplayName(stored);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('dp-display-name', displayName);
+  }, [displayName]);
+
+  useEffect(() => {
+    if (planDay) {
+      setPlanTitle(planDay.title);
+      const nextDrafts: Record<number, { startTime: string; endTime: string; note: string }> = {};
+      planDay.items.forEach((item) => {
+        nextDrafts[item.id] = {
+          startTime: item.startTime ?? '',
+          endTime: item.endTime ?? '',
+          note: item.note ?? '',
+        };
+      });
+      setPlanItemDrafts(nextDrafts);
+    } else {
+      setPlanTitle('');
+      setPlanItemDrafts({});
     }
+  }, [planDay]);
+
+  async function loadMe() {
+    const res = await fetch('/api/auth/me');
+    if (res.status === 401) {
+      window.location.href = '/login';
+      return;
+    }
+    if (!res.ok) return;
+    const data = await res.json();
+    setCurrentUser(data);
   }
 
-  async function updateUserName() {
-    if (!currentUserId) return;
-    const trimmed = userNameDraft.trim();
-    if (!trimmed) return;
-    await fetch('/api/users', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: currentUserId, name: trimmed }),
-    });
-    loadUsers();
+  async function loadPlaces() {
+    const res = await fetch('/api/places');
+    if (!res.ok) return;
+    const data = await res.json();
+    setPlaces(data);
   }
 
   async function loadPosts() {
-    if (!currentUserId) return;
-    const res = await fetch('/api/posts', {
-      headers: { 'x-user-id': String(currentUserId) },
-    });
+    const res = await fetch('/api/posts');
+    if (!res.ok) return;
     const data = await res.json();
     setPosts(data);
   }
 
-  async function addPost() {
-    if (!currentUserId) return;
-    const trimmed = postContent.trim();
-    if (!trimmed) return;
-    await fetch('/api/posts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': String(currentUserId) },
-      body: JSON.stringify({ content: trimmed, imageUrl: postImageUrl }),
-    });
-    setPostContent('');
-    setPostImageUrl('');
-    loadPosts();
-  }
-
-  async function addComment(postId: number) {
-    if (!currentUserId) return;
-    const draft = commentDrafts[postId] ?? '';
-    const trimmed = draft.trim();
-    if (!trimmed) return;
-    await fetch('/api/comments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': String(currentUserId) },
-      body: JSON.stringify({ postId, content: trimmed }),
-    });
-    setCommentDrafts((prev) => ({ ...prev, [postId]: '' }));
-    loadPosts();
-  }
-
-  async function loadPlaces() {
-    if (!currentUserId) return;
-    const res = await fetch('/api/places', {
-      headers: { 'x-user-id': String(currentUserId) },
-    });
-    const data = await res.json();
-    setPlaces(data);
-    setLoading(false);
-    setPlaceMemoDrafts({});
-  }
-
-  async function addPlace() {
-    if (!currentUserId) return;
-    const trimmedName = name.trim();
-    const trimmedUrl = url.trim();
-    if (!trimmedName) return;
-
-    await fetch('/api/places', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': String(currentUserId) },
-      body: JSON.stringify({ name: trimmedName, url: trimmedUrl }),
-    });
-
-    setName('');
-    setUrl('');
-    loadPlaces();
-  }
-
-  async function updatePlaceMemo(id: number, memo: string) {
-    if (!currentUserId) return;
-    await fetch('/api/places', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': String(currentUserId) },
-      body: JSON.stringify({ id, memo }),
-    });
-    loadPlaces();
-  }
-
-  async function updatePlacePrefecture(id: number, prefecture: string) {
-    if (!currentUserId) return;
-    await fetch('/api/places', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': String(currentUserId) },
-      body: JSON.stringify({ id, prefecture }),
-    });
-    loadPlaces();
-  }
-
-  async function toggleVisited(id: number, visited: boolean) {
-    if (!currentUserId) return;
-    await fetch('/api/places', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': String(currentUserId) },
-      body: JSON.stringify({ id, visited }),
-    });
-    loadPlaces();
-  }
-
   async function loadPlanDay(dateStr: string) {
-    if (!currentUserId) return;
-    setPlanLoading(true);
-    const res = await fetch(`/api/plan-day?date=${dateStr}`, {
-      headers: { 'x-user-id': String(currentUserId) },
-    });
-    const data = await res.json();
-    setPlanDay(data);
-    setPlanLoading(false);
-    setPlanItemDrafts({});
-    setPlanTitleDraft(data?.title ?? '');
-  }
-
-  async function createPlanDay() {
-    if (!currentUserId) return;
-    const title = planTitleDraft.trim() || '今日のプラン';
-    await fetch('/api/plan-day', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': String(currentUserId) },
-      body: JSON.stringify({ title, date: planDate }),
-    });
-    loadPlanDay(planDate);
-  }
-
-  async function addToPlan(placeId: number) {
-    if (!currentUserId) return;
-    if (!planDay) return;
-    await fetch('/api/plan-items', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': String(currentUserId) },
-      body: JSON.stringify({ planDayId: planDay.id, placeId }),
-    });
-    loadPlanDay(planDate);
-  }
-
-  async function addCustomToPlan() {
-    if (!currentUserId) return;
-    if (!planDay) return;
-    const trimmed = customTitle.trim();
-    if (!trimmed) return;
-    await fetch('/api/plan-items', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': String(currentUserId) },
-      body: JSON.stringify({ planDayId: planDay.id, title: trimmed }),
-    });
-    setCustomTitle('');
-    loadPlanDay(planDate);
-  }
-
-  async function updatePlanItem(
-    id: number,
-    fields: { startTime?: string; endTime?: string; note?: string },
-  ) {
-    if (!currentUserId) return;
-    await fetch('/api/plan-items', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': String(currentUserId) },
-      body: JSON.stringify({ id, ...fields }),
-    });
-  }
-
-  async function updatePlanTitle() {
-    if (!currentUserId) return;
-    if (!planDay) return;
-    const trimmed = planTitleDraft.trim();
-    if (!trimmed) return;
-    await fetch('/api/plan-day', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': String(currentUserId) },
-      body: JSON.stringify({ id: planDay.id, title: trimmed }),
-    });
-    loadPlanDay(planDate);
-  }
-
-  async function loadMonthlyPlans(month: string) {
-    if (!currentUserId) return;
-    const res = await fetch(`/api/plan-days?month=${month}`, {
-      headers: { 'x-user-id': String(currentUserId) },
-    });
-    const data = await res.json();
-    setMonthlyPlans(data);
-  }
-
-  async function loadUpcomingPlan() {
-    if (!currentUserId) return;
-    const today = new Date();
-    const monthStr = today.toLocaleDateString('sv-SE').slice(0, 7);
-    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1)
-      .toLocaleDateString('sv-SE')
-      .slice(0, 7);
-
-    const fetchMonth = async (month: string) => {
-      const res = await fetch(`/api/plan-days?month=${month}`, {
-        headers: { 'x-user-id': String(currentUserId) },
-      });
-      return (await res.json()) as PlanDaySummary[];
-    };
-
-    const currentPlans = await fetchMonth(monthStr);
-    const upcoming = currentPlans
-      .map((plan) => ({ ...plan, dateObj: new Date(plan.date) }))
-      .filter((plan) => plan.dateObj >= new Date(today.toDateString()))
-      .sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime())[0];
-
-    if (upcoming) {
-      setNextPlanText(
-        `${shortDateFormatter.format(upcoming.dateObj)} ${upcoming.title}`,
-      );
+    const res = await fetch(`/api/plan-day?date=${dateStr}`);
+    if (!res.ok) {
+      setPlanDay(null);
       return;
     }
-
-    const nextPlans = await fetchMonth(nextMonth);
-    const nextUpcoming = nextPlans
-      .map((plan) => ({ ...plan, dateObj: new Date(plan.date) }))
-      .sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime())[0];
-
-    if (nextUpcoming) {
-      setNextPlanText(
-        `${shortDateFormatter.format(nextUpcoming.dateObj)} ${nextUpcoming.title}`,
-      );
-    } else {
-      setNextPlanText('未設定');
-    }
+    const data = await res.json();
+    setPlanDay(data);
   }
 
-  async function removePlanItem(id: number) {
-    if (!currentUserId) return;
-    await fetch('/api/plan-items', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': String(currentUserId) },
-      body: JSON.stringify({ id }),
-    });
-    loadPlanDay(planDate);
+  async function loadPlanDays(monthStr: string) {
+    const res = await fetch(`/api/plan-days?month=${monthStr}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setPlanDays(data);
   }
-
-  async function deletePlanDay() {
-    if (!currentUserId) return;
-    if (!planDay) return;
-    await fetch('/api/plan-day', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': String(currentUserId) },
-      body: JSON.stringify({ id: planDay.id }),
-    });
-    setPlanDay(null);
-  }
-
-  useEffect(() => {
-    loadUsers();
-  }, []);
-
-  useEffect(() => {
-    if (currentUserId) {
-      loadPlaces();
-      loadPlanDay(planDate);
-    }
-  }, [currentUserId, planDate]);
-
-  useEffect(() => {
-    if (currentUserId && activeTab === 'timeline') {
-      loadPosts();
-    }
-  }, [currentUserId, activeTab]);
-
-  useEffect(() => {
-    const current = users.find((user) => user.id === currentUserId);
-    setUserNameDraft(current?.name ?? '');
-  }, [users, currentUserId]);
-
-  useEffect(() => {
-    if (currentUserId) {
-      loadMonthlyPlans(calendarMonth);
-    }
-  }, [calendarMonth, currentUserId]);
-
-  useEffect(() => {
-    if (currentUserId) {
-      loadUpcomingPlan();
-    }
-  }, [currentUserId, planDate]);
-
-  useEffect(() => {
-    setCalendarMonth(planDate.slice(0, 7));
-  }, [planDate]);
-
-  const monthDate = new Date(`${calendarMonth}-01T00:00:00`);
-  const monthStartDay = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
-  const monthEndDay = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
-  const startWeekday = monthStartDay.getDay();
-  const daysInMonth = monthEndDay.getDate();
-  const planByDate = new Map(
-    monthlyPlans.map((plan) => [
-      new Date(plan.date).toLocaleDateString('sv-SE'),
-      plan,
-    ]),
-  );
 
   const filteredPlaces = useMemo(() => {
-    const targetPrefectures =
-      regionFilter === 'すべて' ? null : new Set(regionMap[regionFilter] ?? []);
+    let list = [...places];
 
-    return places.filter((place) => {
-      if (creatorFilter === 'me' && place.createdBy?.id !== currentUserId) return false;
-      if (creatorFilter === 'partner' && place.createdBy?.id === currentUserId) return false;
-      if (visitedFilter === '行った' && !place.visited) return false;
-      if (visitedFilter === '未訪問' && place.visited) return false;
-      if (targetPrefectures) {
-        if (!place.prefecture) return false;
-        if (!targetPrefectures.has(place.prefecture)) return false;
-      }
-      return true;
-    });
-  }, [places, visitedFilter, regionFilter, creatorFilter, currentUserId]);
-
-  const filteredPosts = useMemo(() => {
-    if (!currentUserId) return posts;
-    if (postFilter === 'me') {
-      return posts.filter((post) => post.createdBy?.id === currentUserId);
+    if (visitedFilter === 'VISITED') {
+      list = list.filter((p) => p.visited);
+    } else if (visitedFilter === 'UNVISITED') {
+      list = list.filter((p) => !p.visited);
     }
-    if (postFilter === 'partner') {
-      return posts.filter((post) => post.createdBy?.id !== currentUserId);
+
+    if (regionFilter !== 'ALL') {
+      const targets = regionMap[regionFilter] ?? [];
+      list = list.filter((p) => (p.prefecture ? targets.includes(p.prefecture) : false));
     }
-    return posts;
-  }, [posts, postFilter, currentUserId]);
 
-  const albumPlaces = useMemo(() => {
-    return places
-      .filter((place) => place.visited)
-      .sort((a, b) => {
-        const aTime = a.visitedAt ? new Date(a.visitedAt).getTime() : 0;
-        const bTime = b.visitedAt ? new Date(b.visitedAt).getTime() : 0;
-        return bTime - aTime;
-      });
-  }, [places]);
+    if (creatorFilter !== 'ALL') {
+      list = list.filter(
+        (p) => resolveCreatorName(p.createdByName, p.createdBy) === creatorFilter,
+      );
+    }
 
-  const visitedPrefectures = useMemo(() => {
+    return list;
+  }, [places, visitedFilter, regionFilter, creatorFilter, resolveCreatorName]);
+
+  const visitedPlaces = useMemo(() => places.filter((p) => p.visited), [places]);
+  const dateCoins = visitedPlaces.length;
+  const visitedPrefectureSet = useMemo(() => {
     const set = new Set<string>();
-    for (const place of places) {
-      if (place.visited && place.prefecture) {
-        set.add(place.prefecture);
-      }
-    }
+    visitedPlaces.forEach((place) => {
+      if (place.prefecture) set.add(place.prefecture);
+    });
     return set;
-  }, [places]);
+  }, [visitedPlaces]);
 
-  const visitedCount = useMemo(
-    () => places.filter((place) => place.visited).length,
-    [places],
-  );
+  const planByDate = useMemo(() => {
+    const map = new Map<string, PlanDaySummary>();
+    planDays.forEach((plan) => {
+      map.set(dateKey(plan.date), plan);
+    });
+    return map;
+  }, [planDays]);
 
-  const prefectureCount = visitedPrefectures.size;
-  const badgeLabel =
-    prefectureCount >= 20
-      ? '全国チャレンジャー'
-      : prefectureCount >= 10
-        ? '地方マスター'
-        : prefectureCount >= 5
-          ? '旅のはじまり'
-          : 'これから';
+  const calendarCells = useMemo(() => {
+    const [yearStr, monthStr] = calendarMonth.split('-');
+    const year = Number(yearStr);
+    const month = Number(monthStr);
+    if (!year || !month)
+      return [] as Array<{ date: string; day: number; plan: PlanDaySummary | null } | null>;
+
+    const first = new Date(year, month - 1, 1);
+    const startWeekday = first.getDay();
+    const total = new Date(year, month, 0).getDate();
+
+    const cells: Array<{ date: string; day: number; plan: PlanDaySummary | null } | null> = [];
+    for (let i = 0; i < startWeekday; i += 1) {
+      cells.push(null);
+    }
+    for (let day = 1; day <= total; day += 1) {
+      const dateStr = `${calendarMonth}-${String(day).padStart(2, '0')}`;
+      cells.push({ date: dateStr, day, plan: planByDate.get(dateStr) ?? null });
+    }
+    while (cells.length % 7 !== 0) cells.push(null);
+    return cells;
+  }, [calendarMonth, planByDate]);
 
   const mapData = useMemo(() => {
-    const visitedByPref = new Map<string, Place[]>();
-    for (const place of places) {
-      if (place.visited && place.prefecture) {
-        const list = visitedByPref.get(place.prefecture) ?? [];
-        list.push(place);
-        visitedByPref.set(place.prefecture, list);
-      }
-    }
-
-    return prefectureList.map((pref) => {
-      const visitedPlaces = visitedByPref.get(pref.name) ?? [];
-      const description =
-        visitedPlaces.length === 0
-          ? '未訪問'
-          : visitedPlaces
-              .map((place) => {
-                const date = place.visitedAt
-                  ? createdAtFormatter.format(new Date(place.visitedAt))
-                  : '日付不明';
-                return `${date} ${place.name}`;
-              })
-              .join('\n');
-
-      return {
-        id: pref.id,
-        name: pref.name,
-        description,
-        fill: visitedPlaces.length > 0 ? '#34d399' : '#e2e8f0',
-      };
+    const data: Array<{ id: string; fill: string; description: string }> = [];
+    const byPref: Record<string, Place[]> = {};
+    visitedPlaces.forEach((place) => {
+      if (!place.prefecture) return;
+      if (!byPref[place.prefecture]) byPref[place.prefecture] = [];
+      byPref[place.prefecture].push(place);
     });
-  }, [places]);
+
+    Object.entries(byPref).forEach(([pref, list]) => {
+      const id = prefectureCodeMap[pref];
+      if (!id) return;
+      const description = list
+        .map((place) => `${place.name} (${formatDate(place.visitedAt || place.createdAt)})`)
+        .join('\n');
+      data.push({ id, fill: '#34d399', description });
+    });
+
+    return data;
+  }, [visitedPlaces]);
+
+  const creatorOptions = useMemo(() => {
+    const names = new Set<string>();
+    places.forEach((place) => {
+      const name = resolveCreatorName(place.createdByName, place.createdBy);
+      if (name && name !== '不明') names.add(name);
+    });
+    posts.forEach((post) => {
+      const name = resolveCreatorName(post.createdByName, post.createdBy);
+      if (name && name !== '不明') names.add(name);
+    });
+    if (displayName.trim() !== '') names.add(displayName.trim());
+    return Array.from(names);
+  }, [places, posts, displayName]);
+
+  async function handleAddPlace() {
+    const name = placeName.trim();
+    if (!name) return;
+    const res = await fetch('/api/places', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, url: placeUrl.trim(), createdByName: displayName.trim() }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    setPlaces((prev) => [data, ...prev]);
+    setPlaceName('');
+    setPlaceUrl('');
+  }
+
+  async function handleDeletePlace(placeId: number) {
+    const res = await fetch('/api/places', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: placeId }),
+    });
+    if (!res.ok) return;
+    setPlaces((prev) => prev.filter((p) => p.id !== placeId));
+  }
+
+  async function handleMemoSave(placeId: number) {
+    const memo = memoDrafts[placeId] ?? '';
+    const res = await fetch('/api/places', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: placeId, memo }),
+    });
+    if (!res.ok) return;
+    const updated = await res.json();
+    setPlaces((prev) => prev.map((p) => (p.id === placeId ? updated : p)));
+  }
+
+  async function handlePrefectureChange(placeId: number, prefecture: string) {
+    const res = await fetch('/api/places', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: placeId, prefecture }),
+    });
+    if (!res.ok) return;
+    const updated = await res.json();
+    setPlaces((prev) => prev.map((p) => (p.id === placeId ? updated : p)));
+  }
+
+  async function handleVisitedChange(placeId: number, visited: boolean) {
+    const res = await fetch('/api/places', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: placeId, visited }),
+    });
+    if (!res.ok) return;
+    const updated = await res.json();
+    setPlaces((prev) => prev.map((p) => (p.id === placeId ? updated : p)));
+  }
+
+  async function handleCreatePlanDay() {
+    if (!planTitle.trim()) return;
+    const res = await fetch('/api/plan-day', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: planTitle.trim(), date: selectedDate }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    setPlanDay({ ...data, items: [] });
+    await loadPlanDays(calendarMonth);
+  }
+
+  async function handleUpdatePlanTitle() {
+    if (!planDay) return;
+    const res = await fetch('/api/plan-day', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: planDay.id, title: planTitle.trim() }),
+    });
+    if (!res.ok) return;
+    const updated = await res.json();
+    setPlanDay((prev) => (prev ? { ...prev, title: updated.title } : prev));
+    await loadPlanDays(calendarMonth);
+  }
+
+  async function handleDeletePlanDay() {
+    if (!planDay) return;
+    const res = await fetch('/api/plan-day', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: planDay.id }),
+    });
+    if (!res.ok) return;
+    setPlanDay(null);
+    await loadPlanDays(calendarMonth);
+  }
+
+  async function handleAddPlanItem(placeId?: number, customTitle?: string) {
+    if (!planDay) return;
+    const body: { planDayId: number; placeId?: number; title?: string; createdByName?: string } = {
+      planDayId: planDay.id,
+    };
+    if (placeId) body.placeId = placeId;
+    if (customTitle) body.title = customTitle;
+    if (displayName.trim() !== '') body.createdByName = displayName.trim();
+
+    const res = await fetch('/api/plan-items', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return;
+    const item = await res.json();
+    setPlanDay((prev) => (prev ? { ...prev, items: [...prev.items, item] } : prev));
+  }
+
+  async function handleSavePlanItem(itemId: number) {
+    const draft = planItemDrafts[itemId];
+    if (!draft) return;
+    const res = await fetch('/api/plan-items', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: itemId, startTime: draft.startTime, endTime: draft.endTime, note: draft.note }),
+    });
+    if (!res.ok) return;
+    const updated = await res.json();
+    setPlanDay((prev) =>
+      prev ? { ...prev, items: prev.items.map((item) => (item.id === itemId ? updated : item)) } : prev,
+    );
+  }
+
+  async function handleDeletePlanItem(itemId: number) {
+    const res = await fetch('/api/plan-items', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: itemId }),
+    });
+    if (!res.ok) return;
+    setPlanDay((prev) =>
+      prev ? { ...prev, items: prev.items.filter((item) => item.id !== itemId) } : prev,
+    );
+  }
+
+  async function handleCreatePost() {
+    const content = postContent.trim();
+    if (!content) return;
+    const res = await fetch('/api/posts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, imageUrl: postImageUrl.trim(), createdByName: displayName.trim() }),
+    });
+    if (!res.ok) return;
+    const post = await res.json();
+    setPosts((prev) => [post, ...prev]);
+    setPostContent('');
+    setPostImageUrl('');
+  }
+
+  async function handleAddComment(postId: number) {
+    const content = (commentDrafts[postId] ?? '').trim();
+    if (!content) return;
+    const res = await fetch('/api/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ postId, content, createdByName: displayName.trim() }),
+    });
+    if (!res.ok) return;
+    const comment = await res.json();
+    setPosts((prev) =>
+      prev.map((post) => (post.id === postId ? { ...post, comments: [...post.comments, comment] } : post)),
+    );
+    setCommentDrafts((prev) => ({ ...prev, [postId]: '' }));
+  }
+
+  async function handleLogout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    window.location.href = '/login';
+  }
+
+  const filteredPosts = useMemo(() => {
+    if (creatorFilter === 'ALL') return posts;
+    return posts.filter(
+      (post) => resolveCreatorName(post.createdByName, post.createdBy) === creatorFilter,
+    );
+  }, [posts, creatorFilter, resolveCreatorName]);
+
+  const albumPlaces = useMemo(() => visitedPlaces, [visitedPlaces]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-rose-50 to-emerald-50">
-      <main className="mx-auto max-w-6xl p-6 md:p-10 space-y-8">
-        <header className="rounded-3xl border border-white/70 bg-white/70 p-6 md:p-8 shadow-sm backdrop-blur">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.2em] text-emerald-700">
-                For Two
-              </p>
-              <h1 className="text-3xl font-semibold text-slate-900 md:text-4xl">
-                行きたい場所リスト
-              </h1>
-              <p className="text-slate-600">
-                ふたりの「行きたい」を集めて、1日のプランにまとめる。
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1.5 text-xs text-emerald-700">
-                保存はDBに
-              </div>
-              <select
-                className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs text-emerald-700"
-                value={currentUserId ?? ''}
-                onChange={(e) => setCurrentUserId(Number(e.target.value))}
-              >
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name}
-                  </option>
-                ))}
-              </select>
-              <input
-                className="w-28 rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs text-emerald-700"
-                value={userNameDraft}
-                onChange={(e) => setUserNameDraft(e.target.value)}
-                onBlur={updateUserName}
-                placeholder="名前"
-              />
-              <button
-                className="rounded-full bg-slate-900 px-3 py-1.5 text-xs text-white"
-                onClick={() => setIsMapOpen(true)}
-              >
-                訪問マップ
-              </button>
-            </div>
+    <div className="min-h-screen bg-gradient-to-b from-amber-50 via-rose-50 to-orange-50 text-slate-900">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6">
+        <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200/70 bg-white/95 p-4 backdrop-blur">
+          <div>
+            <h1 className="text-2xl font-bold">Date Planner</h1>
+            <p className="text-sm text-slate-600">行きたい場所、プラン、思い出をふたりで共有。</p>
           </div>
-          <div className="mt-5 flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 rounded-full border border-slate-200/70 bg-white/95 px-3 py-1 text-sm">
+              <span className="text-slate-600">あなた</span>
+              <input
+                value={displayName}
+                onChange={(event) => setDisplayName(event.target.value)}
+                onBlur={() => setDisplayName((prev) => prev.trim())}
+                className="w-24 bg-transparent text-sm font-medium text-slate-900 focus:outline-none"
+                placeholder="表示名"
+              />
+            </div>
             <button
-              className={`rounded-full px-3 py-1.5 text-xs ${
-                activeTab === 'places'
-                  ? 'bg-slate-900 text-white'
-                  : 'bg-white text-slate-600'
-              }`}
-              onClick={() => setActiveTab('places')}
+              onClick={() => setMapOpen(true)}
+              className="rounded-full border border-emerald-300 bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-500/30"
             >
-              保存・プラン
+              日本地図
             </button>
             <button
-              className={`rounded-full px-3 py-1.5 text-xs ${
-                activeTab === 'timeline'
-                  ? 'bg-slate-900 text-white'
-                  : 'bg-white text-slate-600'
-              }`}
-              onClick={() => setActiveTab('timeline')}
+              onClick={handleLogout}
+              className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-white/95"
             >
-              ふたりのタイムライン
+              ログアウト
             </button>
-            <button
-              className={`rounded-full px-3 py-1.5 text-xs ${
-                activeTab === 'album'
-                  ? 'bg-slate-900 text-white'
-                  : 'bg-white text-slate-600'
-              }`}
-              onClick={() => setActiveTab('album')}
-            >
-              思い出アルバム
-            </button>
-            <span className="ml-auto inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1.5 text-xs text-amber-700">
-              デートコイン {visitedCount}
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600">
-              {badgeLabel}
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1.5 text-xs text-emerald-700">
-              次の予定: {nextPlanText}
-            </span>
           </div>
         </header>
 
-        {activeTab === 'places' ? (
-          <div className="grid gap-6 md:grid-cols-5">
-          <section className="md:col-span-2 space-y-4 rounded-3xl border border-white/70 bg-white/80 p-6 shadow-sm">
-            <div className="space-y-1">
-              <h2 className="text-lg font-semibold text-slate-900">追加フォーム</h2>
-              <p className="text-sm text-slate-500">URLは任意です。</p>
-            </div>
-            <div className="space-y-3">
-              <input
-                className="w-full rounded-2xl border border-slate-200 bg-white/90 p-3"
-                placeholder="場所の名前"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-              <input
-                className="w-full rounded-2xl border border-slate-200 bg-white/90 p-3"
-                placeholder="URL"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-              />
-              <button
-                className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-white transition hover:bg-slate-800"
-                onClick={addPlace}
-              >
-                追加する
-              </button>
-            </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setTab('places')}
+            className={`rounded-full px-4 py-2 text-sm font-semibold ${
+              tab === 'places' ? 'bg-white text-slate-900' : 'border border-slate-200 text-slate-600'
+            }`}
+          >
+            場所 & プラン
+          </button>
+          <button
+            onClick={() => setTab('timeline')}
+            className={`rounded-full px-4 py-2 text-sm font-semibold ${
+              tab === 'timeline' ? 'bg-white text-slate-900' : 'border border-slate-200 text-slate-600'
+            }`}
+          >
+            タイムライン
+          </button>
+          <button
+            onClick={() => setTab('album')}
+            className={`rounded-full px-4 py-2 text-sm font-semibold ${
+              tab === 'album' ? 'bg-white text-slate-900' : 'border border-slate-200 text-slate-600'
+            }`}
+          >
+            思い出アルバム
+          </button>
+        </div>
 
-            <div className="pt-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-sm font-semibold text-slate-700">保存した場所</h3>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                  {filteredPlaces.length}件
-                </span>
+        {tab === 'places' && (
+          <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+            <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 backdrop-blur">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold">行きたい場所</h2>
+                  <p className="text-xs text-slate-600">保存数: {places.length} / 行った場所: {dateCoins}</p>
+                </div>
                 <button
-                  className="rounded-full bg-amber-600 px-3 py-1 text-xs text-white"
                   onClick={() => {
-                    const pool = places.filter((place) => !place.visited);
-                    const target = pool.length > 0 ? pool : places;
-                    if (target.length === 0) {
-                      setGachaResult(null);
-                      return;
-                    }
-                    const pick = target[Math.floor(Math.random() * target.length)];
+                    if (places.length === 0) return;
+                    const pick = places[Math.floor(Math.random() * places.length)];
                     setGachaResult(pick);
+                    setGachaOpen(true);
                   }}
+                  className="rounded-full border border-pink-300 bg-pink-100 px-4 py-2 text-sm font-semibold text-pink-700 hover:bg-pink-500/30"
                 >
                   ガチャで決める
                 </button>
               </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <select
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600"
-                  value={creatorFilter}
-                  onChange={(e) =>
-                    setCreatorFilter(e.target.value as 'all' | 'me' | 'partner')
-                  }
-                >
-                  <option value="all">全員</option>
-                  <option value="me">自分</option>
-                  <option value="partner">相手</option>
-                </select>
-                <select
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600"
-                  value={visitedFilter}
-                  onChange={(e) => setVisitedFilter(e.target.value)}
-                >
-                  {visitedOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600"
-                  value={regionFilter}
-                  onChange={(e) => setRegionFilter(e.target.value)}
-                >
-                  {regionOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
 
-            {loading ? (
-              <p className="text-sm text-slate-500">読み込み中...</p>
-            ) : (
-              <ul className="space-y-3 max-h-[520px] overflow-y-auto pr-2">
-                {filteredPlaces.map((place) => (
-                  <li
-                    key={place.id}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
+              <div className="mt-4 grid gap-3 rounded-xl border border-slate-200/70 bg-white p-4">
+                <input
+                  value={placeName}
+                  onChange={(event) => setPlaceName(event.target.value)}
+                  placeholder="場所の名前"
+                  className="w-full rounded-lg border border-slate-200/70 bg-white/95 px-3 py-2 text-sm text-slate-900"
+                />
+                <input
+                  value={placeUrl}
+                  onChange={(event) => setPlaceUrl(event.target.value)}
+                  placeholder="URL (任意)"
+                  className="w-full rounded-lg border border-slate-200/70 bg-white/95 px-3 py-2 text-sm text-slate-900"
+                />
+                <button
+                  onClick={handleAddPlace}
+                  className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900"
+                >
+                  保存する
+                </button>
+              </div>
+
+              <div className="mt-5 flex flex-wrap items-center gap-3 text-xs text-slate-600">
+                <div className="flex items-center gap-2">
+                  <span>訪問:</span>
+                  <select
+                    value={visitedFilter}
+                    onChange={(event) => setVisitedFilter(event.target.value as 'ALL' | 'VISITED' | 'UNVISITED')}
+                    className="rounded-lg border border-slate-200/70 bg-white px-2 py-1"
                   >
-                    <div className="flex items-start gap-3">
-                      <div className="h-14 w-14 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+                    <option value="ALL">全部</option>
+                    <option value="VISITED">行った</option>
+                    <option value="UNVISITED">まだ</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span>エリア:</span>
+                  <select
+                    value={regionFilter}
+                    onChange={(event) => setRegionFilter(event.target.value)}
+                    className="rounded-lg border border-slate-200/70 bg-white px-2 py-1"
+                  >
+                    <option value="ALL">全部</option>
+                    {Object.keys(regionMap).map((region) => (
+                      <option key={region} value={region}>
+                        {region}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span>追加者:</span>
+                  <select
+                    value={creatorFilter}
+                    onChange={(event) => setCreatorFilter(event.target.value)}
+                    className="rounded-lg border border-slate-200/70 bg-white px-2 py-1"
+                  >
+                    <option value="ALL">全員</option>
+                    {creatorOptions.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="mt-4 max-h-[520px] space-y-4 overflow-y-auto pr-2">
+                {filteredPlaces.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+                    条件に合う場所がありません。
+                  </div>
+                )}
+                {filteredPlaces.map((place) => (
+                  <div key={place.id} className="rounded-2xl border border-slate-200/70 bg-white p-4">
+                    <div className="flex flex-wrap items-start gap-4">
+                      <div className="h-24 w-32 overflow-hidden rounded-xl bg-slate-50">
                         {place.imageUrl ? (
-                          <img
-                            src={place.imageUrl}
-                            alt={place.name}
-                            className="h-full w-full object-cover"
-                          />
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={place.imageUrl} alt={place.name} className="h-full w-full object-cover" />
                         ) : (
-                          <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
-                            No Image
+                          <div className="flex h-full w-full items-center justify-center text-xs text-slate-500">
+                            画像なし
                           </div>
                         )}
                       </div>
-                      <div className="min-w-0">
-                        {place.url ? (
-                          <a
-                            className="font-medium text-slate-900 underline-offset-4 hover:underline"
-                            href={place.url}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            {place.name}
-                          </a>
-                        ) : (
-                          <span className="font-medium text-slate-900">{place.name}</span>
-                        )}
+                      <div className="flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-base font-semibold">{place.name}</h3>
+                          {place.url && (
+                            <a
+                              href={place.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs text-emerald-300 underline"
+                            >
+                              URL
+                            </a>
+                          )}
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">追加日: {formatDate(place.createdAt)}</p>
                         <p className="text-xs text-slate-500">
-                          追加日: {createdAtFormatter.format(new Date(place.createdAt))}
+                          追加者: {resolveCreatorName(place.createdByName, place.createdBy)}
                         </p>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                          <label className="inline-flex items-center gap-2">
+
+                        <div className="mt-2 flex flex-wrap items-center gap-3">
+                          <label className="flex items-center gap-2 text-xs">
                             <input
                               type="checkbox"
                               checked={place.visited}
-                              onChange={(e) => toggleVisited(place.id, e.target.checked)}
+                              onChange={(event) => handleVisitedChange(place.id, event.target.checked)}
+                              className="h-4 w-4"
                             />
                             行った
                           </label>
                           {place.visitedAt && (
-                            <span>
-                              {createdAtFormatter.format(new Date(place.visitedAt))}
-                            </span>
+                            <span className="text-xs text-emerald-300">{formatDate(place.visitedAt)}</span>
                           )}
                         </div>
-                        <div className="mt-2">
+
+                        <div className="mt-3 grid gap-2 text-xs">
                           <select
-                            className="w-full rounded-xl border border-slate-200 bg-white/90 p-2 text-sm"
                             value={place.prefecture ?? ''}
-                            onChange={(e) => updatePlacePrefecture(place.id, e.target.value)}
+                            onChange={(event) => handlePrefectureChange(place.id, event.target.value)}
+                            className="w-full rounded-lg border border-slate-200/70 bg-white/95 px-2 py-1 text-sm"
                           >
                             <option value="">都道府県を選択</option>
-                            {[
-                              '北海道',
-                              '青森県',
-                              '岩手県',
-                              '宮城県',
-                              '秋田県',
-                              '山形県',
-                              '福島県',
-                              '茨城県',
-                              '栃木県',
-                              '群馬県',
-                              '埼玉県',
-                              '千葉県',
-                              '東京都',
-                              '神奈川県',
-                              '新潟県',
-                              '富山県',
-                              '石川県',
-                              '福井県',
-                              '山梨県',
-                              '長野県',
-                              '岐阜県',
-                              '静岡県',
-                              '愛知県',
-                              '三重県',
-                              '滋賀県',
-                              '京都府',
-                              '大阪府',
-                              '兵庫県',
-                              '奈良県',
-                              '和歌山県',
-                              '鳥取県',
-                              '島根県',
-                              '岡山県',
-                              '広島県',
-                              '山口県',
-                              '徳島県',
-                              '香川県',
-                              '愛媛県',
-                              '高知県',
-                              '福岡県',
-                              '佐賀県',
-                              '長崎県',
-                              '熊本県',
-                              '大分県',
-                              '宮崎県',
-                              '鹿児島県',
-                              '沖縄県',
-                            ].map((pref) => (
+                            {prefectureOptions.map((pref) => (
                               <option key={pref} value={pref}>
                                 {pref}
                               </option>
                             ))}
                           </select>
+                          <textarea
+                            value={memoDrafts[place.id] ?? place.memo ?? ''}
+                            onChange={(event) =>
+                              setMemoDrafts((prev) => ({ ...prev, [place.id]: event.target.value }))
+                            }
+                            onBlur={() => handleMemoSave(place.id)}
+                            placeholder="メモ"
+                            className="min-h-[60px] w-full rounded-lg border border-slate-200/70 bg-white/95 px-2 py-1 text-sm"
+                          />
                         </div>
-                        <p className="text-[11px] text-slate-400">
-                          追加した人: {place.createdBy?.name ?? '不明'}
-                        </p>
-                        <input
-                          className="mt-2 w-full rounded-xl border border-slate-200 bg-white/90 p-2 text-sm"
-                          placeholder="メモ"
-                          value={placeMemoDrafts[place.id] ?? place.memo ?? ''}
-                          onChange={(e) =>
-                            setPlaceMemoDrafts((prev) => ({
-                              ...prev,
-                              [place.id]: e.target.value,
-                            }))
-                          }
-                          onBlur={(e) => updatePlaceMemo(place.id, e.target.value)}
-                        />
                       </div>
-                      <div className="ml-auto flex flex-col items-end gap-2">
+                      <div className="flex flex-col gap-2">
                         <button
-                          className="rounded-full bg-emerald-100 px-3 py-1 text-xs text-emerald-700"
-                          onClick={() => addToPlan(place.id)}
-                          disabled={!planDay}
+                          onClick={() => handleAddPlanItem(place.id)}
+                          className="rounded-lg border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:bg-white/95"
                         >
                           プランに追加
                         </button>
                         <button
-                          className="text-xs text-rose-600"
-                          onClick={async () => {
-                            if (!currentUserId) return;
-                            await fetch('/api/places', {
-                              method: 'DELETE',
-                              headers: {
-                                'Content-Type': 'application/json',
-                                'x-user-id': String(currentUserId),
-                              },
-                              body: JSON.stringify({ id: place.id }),
-                            });
-                            loadPlaces();
-                          }}
+                          onClick={() => handleDeletePlace(place.id)}
+                          className="rounded-lg border border-rose-300 px-3 py-1 text-xs text-rose-200 hover:bg-white0/20"
                         >
                           削除
                         </button>
                       </div>
                     </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section className="md:col-span-3 space-y-4 rounded-3xl border border-white/70 bg-white/80 p-6 shadow-sm">
-            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-              <div className="space-y-1">
-                <h2 className="text-lg font-semibold text-slate-900">一日のプラン</h2>
-                <p className="text-sm text-slate-500">
-                  日付を選んで、順番に並べていきましょう。
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <input
-                  type="date"
-                  className="rounded-2xl border border-slate-200 bg-white/90 p-2"
-                  value={planDate}
-                  onChange={(e) => setPlanDate(e.target.value)}
-                />
-                {!planDay && (
-                  <button
-                    className="rounded-2xl bg-slate-900 px-3 py-2 text-white transition hover:bg-slate-800"
-                    onClick={createPlanDay}
-                  >
-                    この日を作成
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-              <div className="flex items-center justify-between">
-                <button
-                  className="text-sm text-slate-500"
-                  onClick={() => {
-                    const prev = new Date(monthDate.getFullYear(), monthDate.getMonth() - 1, 1);
-                    setCalendarMonth(prev.toLocaleDateString('sv-SE').slice(0, 7));
-                  }}
-                >
-                  ← 前の月
-                </button>
-                <p className="text-sm font-semibold text-slate-900">
-                  {monthLabelFormatter.format(monthDate)}
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    className="text-xs text-slate-500"
-                    onClick={() => {
-                      const today = new Date().toLocaleDateString('sv-SE').slice(0, 7);
-                      setCalendarMonth(today);
-                    }}
-                  >
-                    今月
-                  </button>
-                  <button
-                    className="text-sm text-slate-500"
-                    onClick={() => {
-                      const next = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1);
-                      setCalendarMonth(next.toLocaleDateString('sv-SE').slice(0, 7));
-                    }}
-                  >
-                    次の月 →
-                  </button>
-                </div>
-              </div>
-              <div className="mt-3 grid grid-cols-7 gap-2 text-center text-xs text-slate-500">
-                {['日', '月', '火', '水', '木', '金', '土'].map((label) => (
-                  <div key={label}>{label}</div>
+                  </div>
                 ))}
               </div>
-              <div className="mt-2 grid grid-cols-7 gap-2">
-                {Array.from({ length: startWeekday }).map((_, idx) => (
-                  <div key={`empty-${idx}`} />
-                ))}
-                {Array.from({ length: daysInMonth }).map((_, idx) => {
-                  const day = idx + 1;
-                  const dateStr = new Date(
-                    monthDate.getFullYear(),
-                    monthDate.getMonth(),
-                    day,
-                  )
-                    .toLocaleDateString('sv-SE')
-                    .slice(0, 10);
-                  const plan = planByDate.get(dateStr);
-                  const hasPlan = Boolean(plan);
-                  const isSelected = planDate === dateStr;
-                  return (
-                    <button
-                      key={dateStr}
-                      className={`rounded-xl border px-2 py-1 text-sm transition ${
-                        isSelected
-                          ? 'border-slate-900 bg-slate-900 text-white'
-                          : 'border-slate-200 bg-white hover:border-slate-400'
-                      }`}
-                      onClick={() => setPlanDate(dateStr)}
-                    >
-                      <div className="flex flex-col items-center gap-1">
-                        <span>{day}</span>
-                        {hasPlan ? (
-                          <span className="max-w-[4.5rem] truncate text-[10px] text-emerald-700">
-                            {plan?.title ?? '予定'}
-                          </span>
-                        ) : (
-                          <span className="h-1.5 w-1.5 rounded-full bg-transparent" />
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            </section>
 
-            {planLoading ? (
-              <p className="text-sm text-slate-500">読み込み中...</p>
-            ) : planDay ? (
-              <div className="space-y-4">
-                <div className="flex flex-wrap items-center gap-2">
+            <section className="space-y-6">
+              <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 backdrop-blur">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold">1日のプラン</h2>
                   <input
-                    className="rounded-xl border border-slate-200 bg-white/90 px-3 py-1 text-sm font-semibold text-slate-900"
-                    value={planTitleDraft}
-                    onChange={(e) => setPlanTitleDraft(e.target.value)}
-                    onBlur={updatePlanTitle}
+                    type="date"
+                    value={selectedDate}
+                    onChange={(event) => {
+                      setSelectedDate(event.target.value);
+                      setCalendarMonth(event.target.value.slice(0, 7));
+                    }}
+                    className="rounded-lg border border-slate-200/70 bg-white px-2 py-1 text-sm"
                   />
-                  <span className="rounded-full bg-slate-900 px-2 py-0.5 text-xs text-white">
-                    {planDay.items.length}件
-                  </span>
-                  <button
-                    className="ml-auto text-xs text-rose-600"
-                    onClick={deletePlanDay}
-                  >
-                    この日のプランを削除
-                  </button>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <input
-                    className="w-full rounded-2xl border border-slate-200 bg-white/90 p-3"
-                    placeholder="自由に追加（例: 09:30 電車で出発）"
-                    value={customTitle}
-                    onChange={(e) => setCustomTitle(e.target.value)}
-                  />
-                  <button
-                    className="rounded-2xl bg-amber-600 px-3 py-2 text-white transition hover:bg-amber-500"
-                    onClick={addCustomToPlan}
-                  >
-                    追加
-                  </button>
-                </div>
-
-                {planDay.items.length === 0 ? (
-                  <p className="text-sm text-slate-500">まだ追加されていません</p>
-                ) : (
-                  <ol className="space-y-4">
-                    {planDay.items.map((item) => (
-                      <li
-                        key={item.id}
-                        className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
+                <div className="mt-4 rounded-xl border border-slate-200/70 bg-white p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      value={planTitle}
+                      onChange={(event) => setPlanTitle(event.target.value)}
+                      placeholder="プラン名 (例: 東京観光)"
+                      className="flex-1 rounded-lg border border-slate-200/70 bg-white/95 px-3 py-2 text-sm"
+                    />
+                    {planDay ? (
+                      <button
+                        onClick={handleUpdatePlanTitle}
+                        className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900"
                       >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-xs ${
-                              item.kind === 'CUSTOM'
-                                ? 'bg-amber-100 text-amber-700'
-                                : 'bg-emerald-100 text-emerald-700'
-                            }`}
-                          >
-                            {item.kind === 'CUSTOM' ? '自由' : '場所'}
-                          </span>
-                          <p className="font-semibold text-slate-900">
-                            {item.place?.name ?? item.title ?? '（無題）'}
+                        更新
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleCreatePlanDay}
+                        className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900"
+                      >
+                        作成
+                      </button>
+                    )}
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">
+                    {planDay ? 'プランを編集できます。' : 'この日のプランを作成します。'}
+                  </p>
+                </div>
+
+                <div className="mt-4">
+                  <h3 className="text-sm font-semibold">自由追加</h3>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <input
+                      value={customItemTitle}
+                      onChange={(event) => setCustomItemTitle(event.target.value)}
+                      placeholder="例: 電車で移動"
+                      className="flex-1 rounded-lg border border-slate-200/70 bg-white/95 px-3 py-2 text-sm"
+                    />
+                    <button
+                      onClick={() => {
+                        if (!customItemTitle.trim()) return;
+                        void handleAddPlanItem(undefined, customItemTitle.trim());
+                        setCustomItemTitle('');
+                      }}
+                      className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600"
+                    >
+                      追加
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 max-h-[320px] space-y-3 overflow-y-auto pr-2">
+                  {!planDay && (
+                    <div className="rounded-xl border border-dashed border-slate-200 p-4 text-xs text-slate-500">
+                      プランを作成すると、ここに行程が表示されます。
+                    </div>
+                  )}
+                  {planDay?.items.map((item) => (
+                    <div key={item.id} className="rounded-xl border border-slate-200/70 bg-white p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold">
+                            {item.kind === 'PLACE' ? item.place?.name : item.title}
                           </p>
-                          <button
-                            className="ml-auto text-xs text-rose-600"
-                            onClick={() => removePlanItem(item.id)}
-                          >
-                            削除
-                          </button>
+                          <p className="text-xs text-slate-500">
+                            追加者: {resolveCreatorName(item.createdByName, item.createdBy)}
+                          </p>
                         </div>
-
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => handleDeletePlanItem(item.id)}
+                          className="text-xs text-rose-200 hover:text-rose-100"
+                        >
+                          削除
+                        </button>
+                      </div>
+                      <div className="mt-2 grid gap-2 text-xs">
+                        <div className="flex gap-2">
                           <input
-                            type="time"
-                            className="rounded-xl border border-slate-200 bg-white/90 p-2"
-                            value={planItemDrafts[item.id]?.startTime ?? item.startTime ?? ''}
-                            onChange={(e) =>
+                            value={planItemDrafts[item.id]?.startTime ?? ''}
+                            onChange={(event) =>
                               setPlanItemDrafts((prev) => ({
                                 ...prev,
                                 [item.id]: {
-                                  ...prev[item.id],
-                                  startTime: e.target.value,
+                                  startTime: event.target.value,
+                                  endTime: prev[item.id]?.endTime ?? '',
+                                  note: prev[item.id]?.note ?? '',
                                 },
                               }))
                             }
-                            onBlur={(e) => updatePlanItem(item.id, { startTime: e.target.value })}
+                            onBlur={() => handleSavePlanItem(item.id)}
+                            placeholder="開始"
+                            className="w-24 rounded-lg border border-slate-200/70 bg-white/95 px-2 py-1 text-xs"
                           />
-                          <span className="text-slate-400">〜</span>
                           <input
-                            type="time"
-                            className="rounded-xl border border-slate-200 bg-white/90 p-2"
-                            value={planItemDrafts[item.id]?.endTime ?? item.endTime ?? ''}
-                            onChange={(e) =>
+                            value={planItemDrafts[item.id]?.endTime ?? ''}
+                            onChange={(event) =>
                               setPlanItemDrafts((prev) => ({
                                 ...prev,
                                 [item.id]: {
-                                  ...prev[item.id],
-                                  endTime: e.target.value,
+                                  startTime: prev[item.id]?.startTime ?? '',
+                                  endTime: event.target.value,
+                                  note: prev[item.id]?.note ?? '',
                                 },
                               }))
                             }
-                            onBlur={(e) => updatePlanItem(item.id, { endTime: e.target.value })}
+                            onBlur={() => handleSavePlanItem(item.id)}
+                            placeholder="終了"
+                            className="w-24 rounded-lg border border-slate-200/70 bg-white/95 px-2 py-1 text-xs"
                           />
                         </div>
-
-                        <input
-                          className="mt-3 w-full rounded-xl border border-slate-200 bg-white/90 p-2"
-                          placeholder="メモ"
-                          value={planItemDrafts[item.id]?.note ?? item.note ?? ''}
-                          onChange={(e) =>
+                        <textarea
+                          value={planItemDrafts[item.id]?.note ?? ''}
+                          onChange={(event) =>
                             setPlanItemDrafts((prev) => ({
                               ...prev,
                               [item.id]: {
-                                ...prev[item.id],
-                                note: e.target.value,
+                                startTime: prev[item.id]?.startTime ?? '',
+                                endTime: prev[item.id]?.endTime ?? '',
+                                note: event.target.value,
                               },
                             }))
                           }
-                          onBlur={(e) => updatePlanItem(item.id, { note: e.target.value })}
+                          onBlur={() => handleSavePlanItem(item.id)}
+                          placeholder="メモ"
+                          className="min-h-[50px] w-full rounded-lg border border-slate-200/70 bg-white/95 px-2 py-1 text-xs"
                         />
-                      </li>
-                    ))}
-                  </ol>
-                )}
-              </div>
-            ) : (
-              <p className="text-sm text-slate-500">この日のプランは未作成です</p>
-            )}
-          </section>
-          </div>
-        ) : activeTab === 'timeline' ? (
-          <section className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-sm">
-            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">ふたりのタイムライン</h2>
-                <p className="text-sm text-slate-500">メモや近況を気軽に残す場所。</p>
-              </div>
-              <div className="flex gap-2">
-                {[
-                  { key: 'all', label: 'すべて' },
-                  { key: 'me', label: '自分' },
-                  { key: 'partner', label: '相手' },
-                ].map((option) => (
-                  <button
-                    key={option.key}
-                    className={`rounded-full px-3 py-1.5 text-xs ${
-                      postFilter === option.key
-                        ? 'bg-slate-900 text-white'
-                        : 'bg-white text-slate-600'
-                    }`}
-                    onClick={() => setPostFilter(option.key as 'all' | 'me' | 'partner')}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
-              <textarea
-                className="w-full rounded-2xl border border-slate-200 bg-white/90 p-3"
-                rows={3}
-                placeholder="今の気持ちや共有したいことを書いてみよう"
-                value={postContent}
-                onChange={(e) => setPostContent(e.target.value)}
-              />
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  className="flex-1 rounded-2xl border border-slate-200 bg-white/90 p-2 text-sm"
-                  placeholder="画像URL（任意）"
-                  value={postImageUrl}
-                  onChange={(e) => setPostImageUrl(e.target.value)}
-                />
-                <button
-                  className="rounded-2xl bg-slate-900 px-4 py-2 text-sm text-white"
-                  onClick={addPost}
-                >
-                  投稿
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-6 space-y-4 max-h-[640px] overflow-y-auto pr-2">
-              {filteredPosts.length === 0 ? (
-                <p className="text-sm text-slate-500">まだ投稿がありません。</p>
-              ) : (
-                filteredPosts.map((post) => (
-                  <article
-                    key={post.id}
-                    className="rounded-2xl border border-slate-200 bg-white p-4"
-                  >
-                    <div className="flex items-center gap-2 text-xs text-slate-500">
-                      <span className="font-semibold text-slate-700">
-                        {post.createdBy?.name ?? '不明'}
-                      </span>
-                      <span>・</span>
-                      <span>{createdAtFormatter.format(new Date(post.createdAt))}</span>
-                    </div>
-                    <p className="mt-2 whitespace-pre-wrap text-slate-900">{post.content}</p>
-                    {post.imageUrl && (
-                      <img
-                        src={post.imageUrl}
-                        alt="post"
-                        className="mt-3 max-h-80 w-full rounded-2xl object-cover"
-                      />
-                    )}
-                    <div className="mt-4 space-y-2">
-                      {(post.comments ?? []).length === 0 ? (
-                        <p className="text-xs text-slate-400">まだコメントがありません。</p>
-                      ) : (
-                        (post.comments ?? []).map((comment) => (
-                          <div
-                            key={comment.id}
-                            className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
-                          >
-                            <div className="flex items-center gap-2 text-xs text-slate-500">
-                              <span className="font-semibold text-slate-700">
-                                {comment.createdBy?.name ?? '不明'}
-                              </span>
-                              <span>・</span>
-                              <span>
-                                {createdAtFormatter.format(new Date(comment.createdAt))}
-                              </span>
-                            </div>
-                            <p className="mt-1 whitespace-pre-wrap text-slate-800">
-                              {comment.content}
-                            </p>
-                          </div>
-                        ))
-                      )}
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input
-                          className="flex-1 rounded-2xl border border-slate-200 bg-white/90 p-2 text-sm"
-                          placeholder="コメントを追加"
-                          value={commentDrafts[post.id] ?? ''}
-                          onChange={(e) =>
-                            setCommentDrafts((prev) => ({
-                              ...prev,
-                              [post.id]: e.target.value,
-                            }))
-                          }
-                        />
-                        <button
-                          className="rounded-2xl bg-slate-900 px-3 py-2 text-xs text-white"
-                          onClick={() => addComment(post.id)}
-                        >
-                          送信
-                        </button>
                       </div>
                     </div>
-                  </article>
-                ))
-              )}
-            </div>
-          </section>
-        ) : (
-          <section className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-sm">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900">思い出アルバム</h2>
-              <p className="text-sm text-slate-500">
-                「行った」にチェックした場所を写真付きでまとめます。
-              </p>
-            </div>
-            {albumPlaces.length === 0 ? (
-              <p className="mt-6 text-sm text-slate-500">
-                まだ訪問済みの場所がありません。
-              </p>
-            ) : (
-              <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {albumPlaces.map((place) => (
-                  <article
-                    key={place.id}
-                    className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
+                  ))}
+                </div>
+
+                {planDay && (
+                  <button
+                    onClick={handleDeletePlanDay}
+                    className="mt-4 rounded-lg border border-rose-300 px-4 py-2 text-sm text-rose-200"
                   >
-                    <div className="h-40 w-full bg-slate-100">
-                      {place.imageUrl ? (
-                        <img
-                          src={place.imageUrl}
-                          alt={place.name}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
-                          No Image
+                    この日のプランを削除
+                  </button>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 backdrop-blur">
+                <h2 className="text-lg font-semibold">カレンダー</h2>
+                <div className="mt-3 flex items-center justify-between text-sm">
+                  <button
+                    onClick={() => {
+                      const [yearStr, monthStr] = calendarMonth.split('-');
+                      const year = Number(yearStr);
+                      const month = Number(monthStr);
+                      const prev = new Date(year, month - 2, 1);
+                      const nextKey = prev.toLocaleDateString('sv-SE').slice(0, 7);
+                      setCalendarMonth(nextKey);
+                    }}
+                    className="rounded-full border border-slate-200/70 px-3 py-1"
+                  >
+                    ← 前月
+                  </button>
+                  <span className="text-slate-600">{calendarMonth}</span>
+                  <button
+                    onClick={() => {
+                      const [yearStr, monthStr] = calendarMonth.split('-');
+                      const year = Number(yearStr);
+                      const month = Number(monthStr);
+                      const next = new Date(year, month, 1);
+                      const nextKey = next.toLocaleDateString('sv-SE').slice(0, 7);
+                      setCalendarMonth(nextKey);
+                    }}
+                    className="rounded-full border border-slate-200/70 px-3 py-1"
+                  >
+                    次月 →
+                  </button>
+                </div>
+
+                <div className="mt-4 grid grid-cols-7 gap-2 text-xs">
+                  {['日', '月', '火', '水', '木', '金', '土'].map((day) => (
+                    <div key={day} className="text-center text-slate-500">
+                      {day}
+                    </div>
+                  ))}
+                  {calendarCells.map((cell, index) => (
+                    <div
+                      key={`cell-${index}`}
+                      className={`min-h-[64px] rounded-lg border border-white/5 p-1 text-xs ${
+                        cell?.date === selectedDate ? 'bg-white text-slate-900' : 'bg-white'
+                      }`}
+                      onClick={() => {
+                        if (!cell) return;
+                        setSelectedDate(cell.date);
+                      }}
+                    >
+                      {cell && (
+                        <div>
+                          <div className="text-right text-[11px]">{cell.day}</div>
+                          {cell.plan && (
+                            <div className="mt-1 rounded-md bg-emerald-400/20 px-1 py-0.5 text-[11px] text-emerald-700">
+                              {cell.plan.title}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
-                    <div className="space-y-2 p-4">
-                      <div className="flex items-center justify-between text-xs text-slate-500">
-                        <span>{place.prefecture ?? '都道府県未設定'}</span>
-                        {place.visitedAt && (
-                          <span>
-                            {createdAtFormatter.format(new Date(place.visitedAt))}
-                          </span>
-                        )}
-                      </div>
-                      <h3 className="font-semibold text-slate-900">{place.name}</h3>
-                      {place.memo && (
-                        <p className="text-sm text-slate-600">{place.memo}</p>
-                      )}
-                      <p className="text-xs text-slate-400">
-                        追加した人: {place.createdBy?.name ?? '不明'}
-                      </p>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 backdrop-blur">
+                <h2 className="text-lg font-semibold">これから</h2>
+                <textarea
+                  value={nextPlanText}
+                  onChange={(event) => setNextPlanText(event.target.value)}
+                  placeholder="次の楽しみを書いておく"
+                  className="mt-2 min-h-[90px] w-full rounded-xl border border-slate-200/70 bg-white/95 px-3 py-2 text-sm"
+                />
+              </div>
+            </section>
+          </div>
+        )}
+
+        {tab === 'timeline' && (
+          <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
+            <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 backdrop-blur">
+              <h2 className="text-lg font-semibold">新規投稿</h2>
+              <textarea
+                value={postContent}
+                onChange={(event) => setPostContent(event.target.value)}
+                placeholder="今日のひとこと"
+                className="mt-3 min-h-[120px] w-full rounded-xl border border-slate-200/70 bg-white/95 px-3 py-2 text-sm"
+              />
+              <input
+                value={postImageUrl}
+                onChange={(event) => setPostImageUrl(event.target.value)}
+                placeholder="画像URL (任意)"
+                className="mt-2 w-full rounded-xl border border-slate-200/70 bg-white/95 px-3 py-2 text-sm"
+              />
+              <button
+                onClick={handleCreatePost}
+                className="mt-3 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900"
+              >
+                投稿する
+              </button>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 backdrop-blur">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">タイムライン</h2>
+                <select
+                  value={creatorFilter}
+                  onChange={(event) => setCreatorFilter(event.target.value)}
+                  className="rounded-lg border border-slate-200/70 bg-white px-2 py-1 text-xs"
+                >
+                  <option value="ALL">全員</option>
+                  {creatorOptions.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="mt-4 max-h-[620px] space-y-4 overflow-y-auto pr-2">
+                {filteredPosts.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+                    投稿がまだありません。
+                  </div>
+                )}
+                {filteredPosts.map((post) => (
+                  <article key={post.id} className="rounded-2xl border border-slate-200/70 bg-white p-4">
+                    <div className="flex items-center justify-between text-xs text-slate-500">
+                      <span>{resolveCreatorName(post.createdByName, post.createdBy)}</span>
+                      <span>{formatDateTime(post.createdAt)}</span>
+                    </div>
+                    <p className="mt-2 whitespace-pre-wrap text-sm text-slate-900">{post.content}</p>
+                    {post.imageUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={post.imageUrl} alt="" className="mt-3 w-full rounded-xl object-cover" />
+                    )}
+
+                    <div className="mt-3 space-y-2 text-xs text-slate-600">
+                      {post.comments.map((comment) => (
+                        <div key={comment.id} className="rounded-lg border border-slate-200/70 bg-white/95 px-2 py-1">
+                          <span className="font-semibold">
+                            {resolveCreatorName(comment.createdByName, comment.createdBy)}:
+                          </span>{' '}
+                          {comment.content}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-3 flex gap-2">
+                      <input
+                        value={commentDrafts[post.id] ?? ''}
+                        onChange={(event) =>
+                          setCommentDrafts((prev) => ({ ...prev, [post.id]: event.target.value }))
+                        }
+                        placeholder="コメントを追加"
+                        className="flex-1 rounded-lg border border-slate-200/70 bg-white/95 px-2 py-1 text-xs"
+                      />
+                      <button
+                        onClick={() => handleAddComment(post.id)}
+                        className="rounded-lg border border-slate-200 px-3 py-1 text-xs"
+                      >
+                        送信
+                      </button>
                     </div>
                   </article>
                 ))}
               </div>
-            )}
+            </section>
+          </div>
+        )}
+
+        {tab === 'album' && (
+          <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 backdrop-blur">
+            <h2 className="text-lg font-semibold">思い出アルバム</h2>
+            <p className="mt-1 text-xs text-slate-600">行った場所だけをまとめています。</p>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {albumPlaces.length === 0 && (
+                <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+                  まだ思い出がありません。
+                </div>
+              )}
+              {albumPlaces.map((place) => (
+                <div key={place.id} className="rounded-2xl border border-slate-200/70 bg-white p-3">
+                  <div className="h-40 overflow-hidden rounded-xl bg-slate-50">
+                    {place.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={place.imageUrl} alt={place.name} className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-xs text-slate-500">画像なし</div>
+                    )}
+                  </div>
+                  <div className="mt-3">
+                    <h3 className="text-sm font-semibold">{place.name}</h3>
+                    <p className="text-xs text-slate-500">{place.prefecture ?? '都道府県未設定'}</p>
+                    <p className="text-xs text-emerald-300">{formatDate(place.visitedAt)}</p>
+                    {place.memo && <p className="mt-2 text-xs text-slate-600">{place.memo}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
           </section>
         )}
-      </main>
-      {isMapOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-3xl rounded-3xl bg-white p-6 shadow-xl">
+      </div>
+
+      {mapOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-slate-200/70 bg-slate-950 p-6">
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500">訪問済みマップ</p>
-                <h3 className="text-lg font-semibold text-slate-900">日本地図</h3>
-              </div>
+              <h2 className="text-lg font-semibold">行った県マップ</h2>
               <button
-                className="rounded-full bg-slate-900 px-3 py-1.5 text-xs text-white"
-                onClick={() => setIsMapOpen(false)}
+                onClick={() => setMapOpen(false)}
+                className="rounded-full border border-slate-200 px-3 py-1 text-sm"
               >
                 閉じる
               </button>
             </div>
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <JapanMap
-                size="560px"
-                bgColor="#f8fafc"
-                strokeColor="#ffffff"
-                data={mapData}
-              />
-              <div className="mt-3 flex items-center gap-4 text-xs text-slate-600">
-                <span className="inline-flex items-center gap-2">
-                  <span className="h-3 w-3 rounded bg-emerald-400" />
-                  訪問済み
-                </span>
-                <span className="inline-flex items-center gap-2">
-                  <span className="h-3 w-3 rounded bg-slate-200" />
-                  未訪問
-                </span>
+            <div className="mt-4 flex flex-col gap-4 lg:flex-row">
+              <div className="flex-1">
+                <JapanMap size="560px" data={mapData} />
+              </div>
+              <div className="w-full max-w-xs space-y-2 text-xs text-slate-600">
+                {Array.from(visitedPrefectureSet).length === 0 && (
+                  <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-xs text-slate-500">
+                    まだチェックされた県がありません。
+                  </div>
+                )}
+                {Array.from(visitedPrefectureSet).map((pref) => (
+                  <div key={pref} className="rounded-xl border border-slate-200/70 bg-white/95 p-3">
+                    <p className="font-semibold text-slate-900">{pref}</p>
+                    <ul className="mt-2 space-y-1">
+                      {visitedPlaces
+                        .filter((place) => place.prefecture === pref)
+                        .map((place) => (
+                          <li key={place.id}>
+                            {place.name} ({formatDate(place.visitedAt || place.createdAt)})
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
         </div>
       )}
-      {gachaResult && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500">次の行き先</p>
-                <h3 className="text-lg font-semibold text-slate-900">ガチャ結果</h3>
-              </div>
-              <button
-                className="rounded-full bg-slate-900 px-3 py-1.5 text-xs text-white"
-                onClick={() => setGachaResult(null)}
-              >
-                閉じる
-              </button>
-            </div>
-            <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-center gap-3">
-                <div className="h-14 w-14 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
-                  {gachaResult.imageUrl ? (
-                    <img
-                      src={gachaResult.imageUrl}
-                      alt={gachaResult.name}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
-                      No Image
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <p className="font-semibold text-slate-900">{gachaResult.name}</p>
-                  <p className="text-xs text-slate-500">
-                    {gachaResult.prefecture ?? '都道府県未設定'}
-                  </p>
-                </div>
-              </div>
-              {gachaResult.url && (
-                <a
-                  className="text-sm text-emerald-700 underline-offset-4 hover:underline"
-                  href={gachaResult.url}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  公式サイトを開く
-                </a>
+
+      {gachaOpen && gachaResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200/70 bg-slate-950 p-6 text-center">
+            <h2 className="text-lg font-semibold">今日の行き先</h2>
+            <div className="mt-4">
+              <p className="text-xl font-bold text-pink-700">{gachaResult.name}</p>
+              {gachaResult.imageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={gachaResult.imageUrl} alt={gachaResult.name} className="mt-3 w-full rounded-xl object-cover" />
               )}
+              {gachaResult.prefecture && <p className="mt-2 text-sm text-slate-600">{gachaResult.prefecture}</p>}
             </div>
+            <button
+              onClick={() => setGachaOpen(false)}
+              className="mt-4 rounded-lg border border-slate-200 px-4 py-2 text-sm"
+            >
+              閉じる
+            </button>
           </div>
         </div>
       )}
     </div>
   );
 }
+
+
+
+

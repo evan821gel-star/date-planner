@@ -1,11 +1,10 @@
 import { prisma } from '@/app/lib/prisma';
+import { requireUser } from '@/app/lib/auth';
 
 async function getContext(req: Request) {
-  const userIdHeader = req.headers.get('x-user-id');
-  const userId = userIdHeader ? Number(userIdHeader) : NaN;
-  if (!userId || Number.isNaN(userId)) {
-    return { error: new Response('user is required', { status: 401 }) };
-  }
+  const auth = await requireUser();
+  if ('error' in auth) return { error: auth.error };
+  const userId = auth.userId;
   const membership = await prisma.pairMember.findFirst({
     where: { userId },
   });
